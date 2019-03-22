@@ -1,0 +1,20 @@
+cores = range(18,26)
+for core in cores:
+    bess.add_worker(core, core)
+
+p0 = PMDPort(pci='af:00.0', num_inc_q=4, num_out_q=4)
+p1 = PMDPort(pci='86:00.0', num_inc_q=4, num_out_q=4)
+
+in_queues = {p0.name: [], p1.name: []}
+out_queues = {p0.name: [], p1.name: []}
+
+for queue in range(4):
+    for port in [p0.name, p1.name]:
+        in_queues[port].append(QueueInc(port=port, qid=queue))
+        out_queues[port].append(QueueOut(port=port, qid=queue))
+
+    in_queues[p0.name][queue] -> out_queues[p1.name][queue]
+    in_queues[p1.name][queue] -> out_queues[p0.name][queue]
+
+    in_queues[p0.name][queue].attach_task(wid=18+queue)
+    in_queues[p1.name][queue].attach_task(wid=22+queue)
