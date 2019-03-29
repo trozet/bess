@@ -1,0 +1,126 @@
+# Copyright (c) 2019, Red Hat, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+#
+# * Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# * Neither the names of the copyright holders nor the names of their
+# contributors may be used to endorse or promote products derived from this
+# software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+# Performs L3 forwarding across physical DPDK ports, using 8 cores.
+# BESS_FLOWS arg is for number of bi-directional flows. If more than 1 is
+# provided, number of routes = 2 *BESS_FLOWS + 1 (default route) using 32
+# bit prefix mask. If only 1 BESS_FLOW is used, an 8 bit prefix is used.
+
+# L3 forwarding operation consists of incoming dest packet match, IP lookup,
+# and updating outgoing packet src/dst mac. ARP lookup is ignored in this
+# case.
+
+import ipaddress
+
+flows = int($BESS_FLOWS!'1')
+print('Using %d flows... (envvar "BESS_FLOWS")' % flows)
+
+cores = range(18,26)
+for core in cores:
+    bess.add_worker(core, core)
+
+p0 = PMDPort(pci='af:00.0', num_inc_q=4, num_out_q=8)
+p1 = PMDPort(pci='86:00.0', num_inc_q=4, num_out_q=8)
+
+inaf = PortInc(port=p0)
+in86 = PortInc(port=p1)
+
+outaf = PortOut(port=p0)
+out86 = PortOut(port=p1)
+
+p0_mac = "3c:fd:fe:a0:d5:b8"
+p1_mac = "68:05:ca:3b:15:48"
+p0_mac_bytes = p0_mac.replace(':', '').decode('hex')
+p1_mac_bytes = p1_mac.replace(':', '').decode('hex')
+
+p0_dest_mac_check = ExactMatch(fields=[{'offset': 0, 'num_bytes': 6}])
+p0_dest_mac_check.add(fields=[{'value_bin': p0_mac_bytes}], gate=1)
+p0_dest_mac_check.set_default_gate(gate=0)
+
+p1_dest_mac_check = ExactMatch(fields=[{'offset': 0, 'num_bytes': 6}])
+p1_dest_mac_check.add(fields=[{'value_bin': p1_mac_bytes}], gate=1)
+p1_dest_mac_check.set_default_gate(gate=0)
+
+inaf -> p0_dest_mac_check
+p0_dest_mac_check:0 -> Sink()
+
+in86 -> p1_dest_mac_check
+p1_dest_mac_check:0 -> Sink()
+
+fib = IPLookup(max_rules=flows*2+1, max_tbl8s=flows*2)
+count=0
+if flows == 1:
+    prefix_len = 8
+    west_addr = ipaddress.ip_address(u'12.0.0.0')
+    east_addr = ipaddress.ip_address(u'11.0.0.0')
+else:
+    prefix_len = 32
+    west_addr = ipaddress.ip_address(u'12.0.0.3')
+    east_addr = ipaddress.ip_address(u'11.0.0.3')
+
+print("prefix length set to {}".format(prefix_len))
+print("starting addresses set to: {}, {}".format(west_addr, east_addr))
+
+while count < flows:
+    fib.add(prefix=str(east_addr), prefix_len=prefix_len, gate=11)
+    fib.add(prefix=str(west_addr), prefix_len=prefix_len, gate=12)
+    count+=1
+    west_addr+=1
+    east_addr+=1
+    print('Added {} routes'.format(count*2), end="\r")
+
+fib.add(prefix='0.0.0.0', prefix_len=0, gate=0)
+
+p0_dest_mac_check:1 -> fib
+p1_dest_mac_check:1 -> fib
+
+# Update packet dest mac, src mac
+# Ignore ARP lookup for dest mac and hardcode
+route11_next_hop = "3c:fd:fe:a0:da:19"
+route12_next_hop = "3c:fd:fe:a0:d8:99"
+
+route11_nh_int = int(route11_next_hop.translate(None, ":.- "), 16)
+route12_nh_int = int(route12_next_hop.translate(None, ":.- "), 16)
+
+route11_pkt_update = Update(fields=[
+    {'offset':0, 'size':6, 'value': route11_nh_int},
+    {'offset':6, 'size':6, 'value': int(p1_mac_bytes.encode('hex'), 16)},
+])
+
+route12_pkt_update = Update(fields=[
+    {'offset':0, 'size':6, 'value': route12_nh_int},
+    {'offset':6, 'size':6, 'value': int(p0_mac_bytes.encode('hex'), 16)},
+])
+
+fib:0 -> Sink()
+fib:11 -> route11_pkt_update
+fib:12 -> route12_pkt_update
+
+route11_pkt_update -> out86
+route12_pkt_update -> outaf
