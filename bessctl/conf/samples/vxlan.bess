@@ -1,0 +1,93 @@
+# Copyright (c) 2019, Red Hat, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+#
+# * Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# * Neither the names of the copyright holders nor the names of their
+# contributors may be used to endorse or promote products derived from this
+# software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+# Performs VXLAN encap forwarding across physical DPDK ports, using 8 cores.
+# BESS_FLOWS arg is for number of bi-directional flows. Forwarding is
+# bi-directional between 2 ports.
+
+import socket
+
+def aton(ip):
+    return socket.inet_aton(ip)
+
+
+cores = range(18,26)
+for core in cores:
+    bess.add_worker(core, core)
+
+p0 = PMDPort(pci='af:00.0', num_inc_q=4, num_out_q=8)
+p1 = PMDPort(pci='86:00.0', num_inc_q=4, num_out_q=8)
+
+inaf = PortInc(port=p0)
+in86 = PortInc(port=p1)
+
+outaf = PortOut(port=p0)
+out86 = PortOut(port=p1)
+
+bess_west_mac_bin = "\x3c\xfd\xfe\xa0\xd5\xb8"
+bess_east_mac_bin = "\x68\x05\xca\x3b\x15\x48"
+
+trex_west_mac_bin =  "\x3c\xfd\xfe\xa0\xd8\x99"
+trex_east_mac_bin =  "\x3c\xfd\xfe\xa0\xda\x19"
+
+# traffic from west to east
+# west is 12.x.x.x, east is 11.x.x.x
+inaf-> SetMetadata(attrs=
+               [{'name': 'tun_ip_src', 'size': 4,
+                 'value_bin': aton('11.0.0.2')},
+                {'name': 'tun_ip_dst', 'size': 4,
+                 'value_bin': aton('11.0.0.3')},
+                {'name': 'tun_id', 'size': 4, 'value_int': 999}]) \
+    -> VXLANEncap(dstport=4789) \
+    -> IPEncap() \
+    -> SetMetadata(attrs=
+                   [{'name': 'ether_src', 'size': 6,
+                     'value_bin': bess_east_mac_bin},
+                    {'name': 'ether_dst', 'size': 6,
+                     'value_bin': trex_east_mac_bin}]) \
+    -> EtherEncap() \
+    -> out86
+
+# traffic from east to west
+# west is 11.x.x.x, east is 12.x.x.x
+in86-> SetMetadata(attrs=
+               [{'name': 'tun_ip_src', 'size': 4,
+                 'value_bin': aton('12.0.0.2')},
+                {'name': 'tun_ip_dst', 'size': 4,
+                 'value_bin': aton('12.0.0.3')},
+                {'name': 'tun_id', 'size': 4, 'value_int': 999}]) \
+    -> VXLANEncap(dstport=4789) \
+    -> IPEncap() \
+    -> SetMetadata(attrs=
+                   [{'name': 'ether_src', 'size': 6,
+                     'value_bin': bess_west_mac_bin},
+                    {'name': 'ether_dst', 'size': 6,
+                     'value_bin': trex_west_mac_bin}]) \
+    -> EtherEncap() \
+    -> outaf
