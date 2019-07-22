@@ -33,6 +33,7 @@
 
 #include "../module.h"
 #include "../pb/module_msg.pb.h"
+#include <atomic>
 
 #if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
 #error this code assumes little endian architecture (x86)
@@ -80,10 +81,23 @@ class L2Forward final : public Module {
   CommandResponse CommandLookup(const bess::pb::L2ForwardCommandLookupArg &arg);
   CommandResponse CommandPopulate(
       const bess::pb::L2ForwardCommandPopulateArg &arg);
+  CommandResponse CommandClear(
+      const bess::pb::EmptyArg &);
 
  private:
-  struct l2_table l2_table_;
+  struct l2_table l2_table_[2];
   gate_idx_t default_gate_;
+  std::atomic_int active_table;
+
+  struct l2_table *ActiveTable(void);
+  struct l2_table *BackupTable(void);
+
+  bool source_check;
+
+  void SwapTables(void);
+  void RollBack(void);
+  int DoAdd(const bess::pb::L2ForwardCommandAddArg &arg);
+  int DoDelete(const bess::pb::L2ForwardCommandDeleteArg &arg);
 };
 
 #endif  // BESS_MODULES_L2FORWARD_H_
