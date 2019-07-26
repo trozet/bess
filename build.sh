@@ -1,6 +1,6 @@
 set -e
 
-dnf install -y iproute python2-scapy python3-scapy python3 python3-devel python3-setuptools python2-coverage python3-coverage sudo kmod gflags-devel libtool redhat-rpm-config which gcc gcc-c++ git python-pip libpcap-devel google-benchmark-devel google-benchmark numactl-devel glog glog-devel gtest gtest-devel grpc grpc-devel grpc-plugins libunwind-devel
+dnf install -y perl-Graph-Easy tcpdump iproute python2-scapy python3-scapy python3 python3-devel python3-setuptools python2-coverage python3-coverage sudo kmod gflags-devel libtool redhat-rpm-config which gcc gcc-c++ git python-pip libpcap-devel google-benchmark-devel google-benchmark numactl-devel glog glog-devel gtest gtest-devel grpc grpc-devel grpc-plugins libunwind-devel
 
 pip install --user grpcio grpcio-tools
 git clone https://github.com/google/googletest.git -b release-1.8.1 /usr/src/googletest
