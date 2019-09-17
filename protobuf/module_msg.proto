@@ -226,6 +226,23 @@ message L2ForwardCommandClearArg {
 }
 
 /**
+ * This message dumps the L2 Table
+ */
+message L2ForwardCommandDumpArg {
+}
+
+/**
+ * This message type provides the reponse to the L2Forward function `lookup(..)`.
+ * It returns the gate that a requested MAC address is currently assigned to.
+ */
+message L2ForwardCommandDumpResponse {
+/// A list of L2Forward entries. 
+  repeated string mac = 1; 
+  repeated int64 gate = 2; 
+}
+
+
+/**
  * The Measure module measures and collects latency/jitter data for packets
  * annotated by a Timestamp module. Note that Timestamp and Measure module must reside
  * on the server for accurate measurement (as a result, the most typical use case is

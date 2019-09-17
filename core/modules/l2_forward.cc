@@ -41,6 +41,8 @@
 
 typedef uint64_t mac_addr_t;
 
+const char * macformat = "%02x:%02x:%02x:%02x:%02x:%02x";
+
 static int is_power_of_2(uint64_t n) {
   return (n != 0 && ((n & (n - 1)) == 0));
 }
@@ -561,6 +563,8 @@ const Commands L2Forward::cmds = {
      MODULE_CMD_FUNC(&L2Forward::CommandPopulate), Command::THREAD_UNSAFE},
     {"clear", "EmptyArg",
      MODULE_CMD_FUNC(&L2Forward::CommandClear), Command::THREAD_SAFE},
+    {"dump", "EmptyArg",
+     MODULE_CMD_FUNC(&L2Forward::CommandDump), Command::THREAD_SAFE},
 };
 
 struct l2_table *L2Forward::ActiveTable(void) {
@@ -792,15 +796,35 @@ CommandResponse L2Forward::CommandSetDefaultGate(
   return CommandSuccess();
 }
 
+
 CommandResponse L2Forward::CommandClear(
     const bess::pb::EmptyArg &) {
 
-  
   l2_flush(L2Forward::BackupTable());
   L2Forward::SwapTables();
   l2_flush(L2Forward::BackupTable());
   return CommandSuccess();
 }
+
+CommandResponse L2Forward::CommandDump(
+    const bess::pb::EmptyArg &) {
+  bess::pb::L2ForwardCommandDumpResponse ret;
+
+  uint64_t i;
+  struct l2_table *l2t = L2Forward::ActiveTable();
+  char MAC[18];
+  for (i = 0; i < (l2t->size * l2t->bucket); i++) {
+    if (l2t->table[i].occupied) {
+        const unsigned char *addr = (unsigned char *) &l2t->table[i];
+        snprintf(MAC, 18, macformat, addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+        MAC[17] = 0; // just in case
+        ret.add_mac(MAC);
+        ret.add_gate(l2t->table[i].gate);
+    }
+  }
+  return CommandSuccess(ret);
+}
+
 
 CommandResponse L2Forward::CommandLookup(
     const bess::pb::L2ForwardCommandLookupArg &arg) {
