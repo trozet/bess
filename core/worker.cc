@@ -290,8 +290,20 @@ void *Worker::Run(void *_arg) {
   /* for workers, wid == rte_lcore_id() */
   wid_ = arg->wid;
   core_ = arg->core;
-  socket_ = rte_socket_id();
-  CHECK_GE(socket_, 0);  // shouldn't be SOCKET_ID_ANY (-1)
+  socket_ = FLAGS_n;
+
+  if (rte_lcore_to_socket_id((unsigned int) core_) != (unsigned int) socket_) {
+    LOG(ERROR) << "Core specified: " << core_ << " does not exist on socket: "
+    << socket_ << ". Cannot create worker";
+
+    delete scheduler_;
+    delete rand_;
+
+    return nullptr;
+  }
+
+  LOG(INFO) << "Running worker: " << wid_ << " on core " << core_ << " on socket " << socket_;
+
   fd_event_ = eventfd(0, 0);
   CHECK_GE(fd_event_, 0);
 
