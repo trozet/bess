@@ -30,7 +30,7 @@ before_install:
 
 install:
   - ./container_build.py kmod_buildtest
-  - travis_wait 30 docker build -t nimbess/bess:latest .
+  - travis_wait 35 docker build -t nimbess/bess:latest .
 
 before_script:
   - sudo mkdir -p /mnt/huge
